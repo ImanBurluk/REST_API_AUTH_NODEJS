@@ -1,0 +1,20 @@
+{
+  "name": "rest_api_auth_nodejs",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "nodemon"
+  },
+  "keywords": [],
+  "type": "module",
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "nedb-promises": "^6.2.3",
+    "nodemon": "^3.1.0"
+  }
+}
