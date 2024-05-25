@@ -6,6 +6,7 @@ import { config } from './config.js'
 
 const users = Datastore.create('User.db');
 const userRefreshTokens = Datastore.create('UserRefreshTokens.db');
+const userInvalidTokens = Datastore.create('UserInvalidTokens.db')
 
 const app = express();
 
@@ -152,19 +153,57 @@ async function ensureAuthenticated(req, res, next) {
 		return res.status(401).json({ message: 'Access token not found' })
 	}
 
+	if (await userInvalidTokens.findOne({ accessToken })) {
+		return res.status(401).json({ message: 'Access token invalid', code: 'AccessTokenInvalid' })
+	}
+
 	try {
 		const decodedAccessToken = jwt.verify(accessToken, config.accessTokenSecret)
+
+		req.accessToken = { value: accessToken, exp: decodedAccessToken.exp }
 
 		req.user = { id: decodedAccessToken.userId }
 
 		next()
 	} catch (error) {
-		return res.status(401).json({ message: 'Access token invalid or expired' })
+		if (error instanceof jwt.TokenExpiredError) {
+			return res.status(401).json({ message: 'Access token expired', code: 'AccessTokenExpired' })
+		} else if (error instanceof jwt.JsonWebTokenError) {
+			return res.status(401).json({ message: 'Access token invalid', code: 'AccessTokenInvalid' })
+		} else {
+			return res.status(500).json({ message: error.message });
+		}
+		// return res.status(401).json({ message: 'Access token invalid or expired' })
 	}
 }
 
 app.get('/api/admin', ensureAuthenticated, authorise(['admin']), (req, res) => {
 	return res.status(200).json({ message: 'Only admins can access this route!' })
+})
+
+app.get('/api/auth/logout', ensureAuthenticated, async (req, res) => {
+	try {
+
+		// const { refreshToken } = req.body --if user use diferent device
+		// await userRefreshTokens.remove({refreshToken})
+
+		await userRefreshTokens.removeMany({ userId: req.user.id })
+		await userRefreshTokens.compactDatafile()
+
+
+		await userInvalidTokens.insert({
+			accessToken: req.accessToken.value,
+			userId: req.user.id,
+			expirationTime: req.accessToken.exp
+		})
+
+		return res.status(204).send({ message: error.message })
+
+	} catch (error) {
+
+		return res.status(401).json({ message: error.message })
+
+	}
 })
 
 

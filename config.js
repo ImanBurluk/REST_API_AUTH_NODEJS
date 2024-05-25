@@ -1,6 +1,6 @@
 export const config = {
   accessTokenSecret: 'myAccessTokenSecret',
-  accessTokenExpiresIn: '30s',
+  accessTokenExpiresIn: '30m',
   refrehTokenSecret: 'myRefreshTokenSecret',
-  refrehTokenExpiresIn: '2m',
+  refrehTokenExpiresIn: '1w',
 }
