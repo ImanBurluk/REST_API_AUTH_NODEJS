@@ -5,6 +5,8 @@ import jwt from 'jsonwebtoken'
 import { config } from './config.js'
 import { authenticator } from 'otplib'
 import qrcode from 'qrcode'
+import crypto from 'crypto'
+import NodeCache from 'node-cache'
 
 const users = Datastore.create('User.db');
 const userRefreshTokens = Datastore.create('UserRefreshTokens.db');
@@ -13,6 +15,8 @@ const userInvalidTokens = Datastore.create('UserInvalidTokens.db')
 const app = express();
 
 app.use(express.json());
+
+const cache = new NodeCache();
 
 app.get('/', (req, res) => {
 	res.send('Добро пожалвоать!');
@@ -72,22 +76,31 @@ app.post('/api/auth/login', async (req, res) => {
 			return res.status(401).json({ message: 'Email or password is invalid' });
 		}
 
-		const accessToken = jwt.sign({ userId: user._id }, config.accessTokenSecret, { subject: 'accessApi', expiresIn: config.accessTokenExpiresIn })
+		if (user['2faEnable']) {
+			const tempToken = crypto.randomUUID()
 
-		const refreshToken = jwt.sign({ userId: user._id }, config.refrehTokenSecret, { subject: 'refreshToken', expiresIn: config.refrehTokenExpiresIn })
+			cache.set(config.cacheTemporaryTokenPrefix + tempToken, user._id, config.cacheTemporaryTokenExpiresInSeconds)
 
-		await userRefreshTokens.insert({
-			refreshToken,
-			userId: user._id
-		})
+			return res.status(200).json({ tempToken, expiresInSeconds: config.cacheTemporaryTokenExpiresInSeconds });
+		} else {
+			const accessToken = jwt.sign({ userId: user._id }, config.accessTokenSecret, { subject: 'accessApi', expiresIn: config.accessTokenExpiresIn })
 
-		return res.status(200).json({
-			id: user._id,
-			name: user.name,
-			email: user.email,
-			accessToken,
-			refreshToken
-		})
+			const refreshToken = jwt.sign({ userId: user._id }, config.refrehTokenSecret, { subject: 'refreshToken', expiresIn: config.refrehTokenExpiresIn })
+
+			await userRefreshTokens.insert({
+				refreshToken,
+				userId: user._id
+			})
+
+			return res.status(200).json({
+				id: user._id,
+				name: user.name,
+				email: user.email,
+				accessToken,
+				refreshToken
+			})
+		}
+
 	} catch (error) {
 		return res.status(500).json({ message: error.message });
 	}
@@ -254,7 +267,6 @@ app.get('/api/auth/2fa/generate', ensureAuthenticated, async (req, res) => {
 
 app.post('/api/auth/2fa/validate', ensureAuthenticated, async (req, res) => {
 	try {
-		console.log('👨🏻');
 		const { totp } = req.body
 
 		if (!totp) {
@@ -262,7 +274,6 @@ app.post('/api/auth/2fa/validate', ensureAuthenticated, async (req, res) => {
 		}
 
 		const user = await users.findOne({ _id: req.user.id })
-		console.log(`totp ${totp}`);
 
 		const verified = authenticator.check(totp, user['2faSecret'])
 		console.log(`verified ${verified}`);
