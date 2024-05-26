@@ -3,6 +3,8 @@ import Datastore from 'nedb-promises';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken'
 import { config } from './config.js'
+import { authenticator } from 'otplib'
+import qrcode from 'qrcode'
 
 const users = Datastore.create('User.db');
 const userRefreshTokens = Datastore.create('UserRefreshTokens.db');
@@ -34,12 +36,14 @@ app.post('/api/auth/register', async (req, res) => {
 			name,
 			email,
 			password: hashedPassword,
-			role: role ?? 'member'
+			role: role ?? 'member',
+			'2faEnable': false,
+			'2faSecret': null
 		});
 
 		return res
 			.status(201)
-			.json({ message: 'Поьзователь успешно создан!', id: newUser._id });
+			.json({ message: 'User succesfull create!', id: newUser._id });
 	} catch (error) {
 		return res.status(500).json({ message: error.message });
 	}
@@ -227,6 +231,26 @@ function authorise(roles = []) {
 		next()
 	}
 }
+
+app.get('/api/auth/2fa/generate', ensureAuthenticated, async (req, res) => {
+	try {
+		const user = await users.findOne({ _id: req.user.id })
+
+		const secret = authenticator.generateSecret()
+		const uri = authenticator.keyuri(user.email, 'iman_burlyq', secret)
+
+		await users.update({ _id: req.user.id }, { $set: { '2faSecret': secret } })
+		await users.compactDatafile()
+
+		const qrCode = await qrcode.toBuffer(uri, { type: 'image/png', margin: 1 })
+
+		res.setHeader('Content-Disposition', 'attachment; filename = qrcode.png')
+		return res.status(200).type('image/png').send(qrCode)
+
+	} catch (error) {
+		return res.status(500).json({ message: error.message })
+	}
+})
 
 app.listen(5000, () => {
 	console.log('Server started on port 5000');
