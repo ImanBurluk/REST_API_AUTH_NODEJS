@@ -252,6 +252,33 @@ app.get('/api/auth/2fa/generate', ensureAuthenticated, async (req, res) => {
 	}
 })
 
+app.post('/api/auth/2fa/validate', ensureAuthenticated, async (req, res) => {
+	try {
+		console.log('👨🏻');
+		const { totp } = req.body
+
+		if (!totp) {
+			return res.status(422).json({ message: 'TOTP is required' })
+		}
+
+		const user = await users.findOne({ _id: req.user.id })
+		console.log(`totp ${totp}`);
+
+		const verified = authenticator.check(totp, user['2faSecret'])
+		console.log(`verified ${verified}`);
+		if (!verified) {
+			return res.status(400).json({ message: 'TOTP is not correct or expired' })
+		}
+
+		await users.update({ _id: req.user.id }, { $set: { '2faEnable': true } })
+		await users.compactDatafile()
+
+		return res.status(200).json({ message: 'TOTP validated successfully' })
+	} catch (error) {
+		return res.status(500).json({ message: error.message })
+	}
+})
+
 app.listen(5000, () => {
 	console.log('Server started on port 5000');
 });
