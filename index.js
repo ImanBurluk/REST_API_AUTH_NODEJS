@@ -290,6 +290,50 @@ app.post('/api/auth/2fa/validate', ensureAuthenticated, async (req, res) => {
 	}
 })
 
+app.post('/api/auth/login/2fa', async (req, res) => {
+	try {
+		const { tempToken, totp } = req.body
+
+		if (!tempToken || !totp) {
+			return res.status(422).json({ message: 'Please fill in all fields (tempToken and totp)' })
+		}
+
+		const userId = cache.get(config.cacheTemporaryTokenPrefix + tempToken)
+
+		if (!userId) {
+			return res.status(401).json({ message: 'The provided temporary token is incorrect or expired' })
+		}
+
+		const user = await users.findOne({ _d: userId })
+
+		const verified = authenticator.check(totp, user['2faSecret'])
+
+		if (!verified) {
+			return res.status(401).json({ message: 'The provided TOTP is incorrect or expired' })
+		}
+		const accessToken = jwt.sign({ userId: user._id }, config.accessTokenSecret, { subject: 'accessApi', expiresIn: config.accessTokenExpiresIn })
+
+		const refreshToken = jwt.sign({ userId: user._id }, config.refrehTokenSecret, { subject: 'refreshToken', expiresIn: config.refrehTokenExpiresIn })
+
+		await userRefreshTokens.insert({
+			refreshToken,
+			userId: user._id
+		})
+
+		return res.status(200).json({
+			id: user._id,
+			name: user.name,
+			email: user.email,
+			accessToken,
+			refreshToken
+		})
+
+
+	} catch (error) {
+		return res.status(500).json({ message: error.message })
+	}
+})
+
 app.listen(5000, () => {
 	console.log('Server started on port 5000');
 });
